@@ -6,17 +6,17 @@ const { Corte } = require(path.join(__dirname, '../schemas', 'corteSchema.js'));
 const { HTTP } = require(path.join(__dirname, '../config', 'config.js'))
 
 
-// Ruta Base
+// GET Base
 router.get('/', (req, res) => {
   res.status(HTTP.OK).send('Página de corte');
 });
 
-// Ruta Details
+// GET Details
 router.get('/details', (req, res) => {
   res.status(HTTP.OK).send('Detalle de corte');
 });
 
-// Data
+// GET Data
 router.get('/data', (req, res) => {
     Corte.find({})
     .then((cortes) => {
@@ -28,7 +28,7 @@ router.get('/data', (req, res) => {
     });
 });
 
-// Get Corte By RCC
+// GET Corte By RCC
 router.get('/rcc/:rcc', (req, res) => {
     const rcc = req.params.rcc;
 
@@ -46,7 +46,7 @@ router.get('/rcc/:rcc', (req, res) => {
     });
 });
 
-// Get Corte Between RCC
+// GET Corte Between RCC
 router.get('/rcc', (req, res) => {
     const rcc1 = req.query.rcc1;
     const rcc2 = req.query.rcc2;
@@ -65,16 +65,15 @@ router.get('/rcc', (req, res) => {
     });
 });
 
-// Get Corte By Date
+// GET Corte By Date
 router.get('/date/:date', (req, res) => {
     const date = req.params.date;
 
     try {
-        const fecha = moment.tz(date, 'America/Los_Angeles').toDate();
-        const fechaInicio = moment(fecha).startOf('day').toDate();
-        const fechaFin = moment(fecha).endOf('day').toDate();
+        const fechaInicio = moment.tz(date, 'America/Los_Angeles').startOf('day').toDate();
+        const fechaFin = moment.tz(date, 'America/Los_Angeles').endOf('day').toDate();
 
-        Corte.find({ fechaHora: { $gte: fechaInicio, $lt: fechaFin } })
+        Corte.find({ fechaHora: { $gte: fechaInicio, $lte: fechaFin } })
         .then((cortes) => {
             res.status(HTTP.FOUND).json(cortes);
         })
@@ -87,7 +86,7 @@ router.get('/date/:date', (req, res) => {
     }
 });
 
-// Get Corte Between Dates
+// GET Corte Between Dates
 router.get('/date', (req, res) => {
     const date1 = req.query.date1;
     const date2 = req.query.date2;
@@ -107,6 +106,75 @@ router.get('/date', (req, res) => {
     } catch (error) {
         return res.status(HTTP.BAD_REQUEST).json({ error: 'Formato de fecha inválido. Utiliza el formato YYYY-MM-DD' });
     }
-});  
+});
+
+// GET Chart Data Between Dates
+router.get('/chart-data', (req, res) => {
+    const date1 = req.query.date1;
+    const date2 = req.query.date2;
+
+    try {
+        const fechaInicio = moment.tz(date1, 'America/Los_Angeles').startOf('day').toDate();
+        const fechaFin = moment.tz(date2, 'America/Los_Angeles').endOf('day').toDate();
+
+        Corte.find({ fechaHora: { $gte: fechaInicio, $lte: fechaFin } })
+        .then((cortes) => {
+            const chartData = new Map();
+            const matutinoData = new Map();
+            const vespertinoData = new Map();
+
+            cortes.forEach((corte) => {
+                const corteFecha = moment.tz(corte.fechaHora, 'America/Los_Angeles');
+                const corteFechaFormatted = corteFecha.format('YYYY-MM-DD');
+                const corteHora = corteFecha.hour();
+                const totalSistema = corte.totalSistema;
+
+                if (corteHora < 18) {
+                    // Corte del turno matutino
+                    if (matutinoData.has(corteFechaFormatted)) {
+                        matutinoData.set(corteFechaFormatted, matutinoData.get(corteFechaFormatted) + totalSistema);
+                    } else {
+                        matutinoData.set(corteFechaFormatted, totalSistema);
+                    }
+                } else {
+                // Corte del turno vespertino
+                    if (vespertinoData.has(corteFechaFormatted)) {
+                        vespertinoData.set(corteFechaFormatted, vespertinoData.get(corteFechaFormatted) + totalSistema);
+                    } else {
+                        vespertinoData.set(corteFechaFormatted, totalSistema);
+                    }
+                }
+
+                if (chartData.has(corteFechaFormatted)) {
+                    chartData.set(corteFechaFormatted, chartData.get(corteFechaFormatted) + totalSistema);
+                } else {
+                    chartData.set(corteFechaFormatted, totalSistema);
+                }
+            });
+
+            const labels = Array.from(chartData.keys());
+            const data = Array.from(chartData.values());
+            const matutino = Array.from(matutinoData.values());
+            const vespertino = Array.from(vespertinoData.values());
+
+            const chartDataResult = {
+                labels: labels,
+                data: data,
+                matutino: matutino,
+                vespertino: vespertino,
+            };
+
+            res.status(HTTP.OK).json(chartDataResult);
+        })
+        .catch((error) => {
+            console.error(error);
+            res.status(HTTP.INTERNAL_SERVER_ERROR).json({ error: 'Error al obtener los datos para la gráfica' });
+        });
+    } catch (error) {
+        return res.status(HTTP.BAD_REQUEST).json({ error: 'Formato de fecha inválido. Utiliza el formato YYYY-MM-DD' });
+    }
+});
+  
+    
 
 module.exports = router;
