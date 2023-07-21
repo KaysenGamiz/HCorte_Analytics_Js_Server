@@ -175,6 +175,61 @@ router.get('/chart-data', (req, res) => {
     }
 });
   
-    
+// GET Accumulated Data for a Month
+router.get('/accumulated-data', (req, res) => {
+    const { date } = req.query;
+
+    try {
+        const fechaInicio = moment.tz(date, 'America/Los_Angeles').startOf('month').toDate();
+        const fechaFin = moment.tz(date, 'America/Los_Angeles').endOf('month').toDate();
+
+        Corte.aggregate([
+        {
+            $match: {
+            fechaHora: { $gte: fechaInicio, $lte: fechaFin },
+            },
+        },
+        {
+            $group: {
+                _id: null,
+                dolaresEfectivo: {
+                    $sum: {
+                        $cond: [
+                            {
+                                $and: [
+                                    { $ne: ['$dolares.TC', 0] },
+                                    { $ne: ['$dolares.efectivo', 0] }
+                                ]
+                            },
+                            { $multiply: ['$dolares.TC', '$dolares.efectivo'] }, 0
+                        ]
+                    }
+                },
+                totalEfectivo: { $sum: '$totalEfectivo' },
+                tarjeta: { $sum: '$tarjeta' },
+            },
+        },
+        ])
+        .then((result) => {
+            const accumulatedData = result[0] || {
+                dolaresEfectivo: 0,
+                totalEfectivo: 0,
+                tarjeta: 0,
+            };
+
+            res.status(HTTP.OK).json(accumulatedData);
+        })
+        .catch((error) => {
+            console.error(error);
+            res.status(HTTP.INTERNAL_SERVER_ERROR).json({ error: 'Error al obtener los datos acumulados' });
+        });
+    } catch (error) {
+        return res.status(HTTP.BAD_REQUEST).json({ error: 'Formato de fecha inválido. Utiliza el formato YYYY-MM-DD' });
+    }
+});
+  
+  
+  
+  
 
 module.exports = router;
